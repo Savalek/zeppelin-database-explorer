@@ -1,0 +1,19 @@
+{
+  "name": "zeppelin-database-explorer",
+  "description": "Display a data tree (for example, a database structure)",
+  "version": "0.0.1",
+  "main": "index",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "zeppelin-spell": "*",
+    "jstree": "3.3.5"
+  },
+  "helium": {
+    "icon" : "<i class='fa fa-repeat'></i>",
+    "spell": {
+      "magic": "%echo",
+      "usage": "%echo <TEXT>"
+    }
+  }
+}
