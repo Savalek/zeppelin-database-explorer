@@ -9,7 +9,7 @@ import jstree from 'jstree';
 let db_explorer;
 let jstreeDOM;
 let contentDOM;
-let currentDatabase = 'greenplum';
+let currentDatabase = 'greenplum2';
 let notebookController = null;
 
 export default class DBExplorerSpell extends SpellBase {
@@ -71,8 +71,8 @@ function hideDBExplorer() {
     contentDOM.style.marginLeft = "0px";
 }
 
-window.dbExplorerSearchListener = function (jstreeInput) {
-    let text = jstreeInput.value;
+window.dbExplorerSearch = function () {
+    let text = $('#inputJstreeSearch')[0].value;
     jstreeDOM.jstree(true).search(text);
 };
 
@@ -96,6 +96,8 @@ window.dbExplorerChangeDatabase = function (name) {
         'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + name;
     jstreeDOM.jstree(true).settings.search.ajax.url =
         'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + name;
+    jstreeDOM.jstree(true).settings.massload.url =
+        'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + name;
     jstreeDOM.jstree(true).close_all();
     jstreeDOM.jstree(true).refresh();
     currentDatabase = name;
@@ -106,7 +108,7 @@ function explorerTreeInit() {
     jstreeDOM = local$('#jstree');
 
     jstreeDOM.jstree({
-        'plugins': ['sort', 'json_data', 'types'/*, 'contextmenu'*/, 'dnd', 'search'],
+        'plugins': ['json_data', 'types', 'dnd', 'search', 'massload'],
         'types': {
             'column': {
                 'icon': 'glyphicon glyphicon-tag my-glyphicon-color-tag'
@@ -118,12 +120,21 @@ function explorerTreeInit() {
                 'icon': 'glyphicon glyphicon-tasks my-glyphicon-color-tasks'
             }
         },
+        'massload': {
+            'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + currentDatabase,
+            'data': function (nodes) {
+                return {'ids': nodes.join(',')};
+            }
+        },
         'core': {
+            'animation' : 0,
+            'worker': false,
+            'force_text' : true,
             'check_callback': function () {
                 return false;
             },
             'data': {
-                'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=greenplum',
+                'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + currentDatabase,
                 'data': function (node) {
                     return {'id': node.id};
                 }
@@ -132,7 +143,7 @@ function explorerTreeInit() {
         'search': {
             'show_only_matches': true,
             'ajax': {
-                'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=greenplum',
+                'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + currentDatabase,
                 'data': function (str) {
                     return {"search_str": str};
                 },
@@ -144,10 +155,11 @@ function explorerTreeInit() {
         data.nodes.forEach(addCommentBlock);
     });
     local$(document).on('dnd_stop.vakata', function (data, element) {
-        //let aceEditor = angular.element(element.event.toElement.closest(".paragraph")).scope().editor;
         pasteSelectInElement(element.event.toElement, element.data.nodes, element.event.ctrlKey);
     });
-    local$(document).on('dnd_move.vakata', function (data, element) {
+
+/*    local$(document).on('dnd_move.vakata', function (data, element) {
+        debugger;
         let classList = element.helper["0"].childNodes["0"].childNodes["0"].classList;
         if (event.toElement.className === 'ace_content') {
             if (classList.contains('jstree-er')) {
@@ -162,7 +174,7 @@ function explorerTreeInit() {
                 classList.add('jstree-er');
             }
         }
-    });
+    });*/
 
 }
 
@@ -330,13 +342,14 @@ function createExplorer() {
     </div>
 
     <select class="form-control" id="databaseSelect" onchange="dbExplorerChangeDatabase(this.value)">
-        <option>greenplum</option>
+        <option>greenplum2</option>
         <option>hive</option>
         <option>sap</option>
     </select>
 
     <div class="form-group">
-        <input type="text" class="form-control" id="jstreeSearch" oninput="dbExplorerSearchListener(this)">
+        <input id="inputJstreeSearch" type="text" class="form-control">
+        <a id="buttonJstreeSearch" class="btn btn-info" onclick="dbExplorerSearch()"><i class="glyphicon glyphicon-search"></i></a>
     </div>
 
     <div id="jstreeDiv">
@@ -362,7 +375,27 @@ function injectCSS() {
 }
 
 #dbExplorerResizeButtons {
+    float: left;
     margin-right: 10px;
+    display: inline-block;
+}
+
+#inputJstreeSearch {
+    width: 182px;
+    display: inline-block;
+    float: left;
+}
+
+#buttonJstreeSearch {
+    display: inline-block;
+    float: right;
+}
+
+#databaseSelect {
+    margin-bottom: 5px;
+    margin-right: 5px;
+    width: 150px;
+    float: left;
     display: inline-block;
 }
 
@@ -372,6 +405,10 @@ function injectCSS() {
     background-color: white;
     border-radius: 5px;
     border: 5px ridge;
+}
+
+.jstree-er {
+    url: none !important;
 }
 
 .db-explorer {
@@ -395,9 +432,8 @@ function injectCSS() {
 }
 
 .db-explorer .form-group{
+    width: 227px;
     display: inline-block;
-    margin-top: 8px;
-    width: 200px;
 }
 
 .resize-button-group {

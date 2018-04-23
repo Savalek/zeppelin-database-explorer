@@ -1,0 +1,20 @@
+{
+  "type": "SPELL",
+  "name": "zeppelin-database-explorer",
+  "version": "0.0.1",
+  "description": "Display a data tree (for example, a database structure)",
+  "artifact": "./zeppelin-examples/zeppelin-database-explorer",
+  "license": "ICS",
+  "icon": "<i class='fa fa-folder-open'></i>",
+  "config": {
+    "URL": {
+      "type": "string",
+      "description": "url of database server",
+      "defaultValue": "http://example.com:8080"
+    }
+  },
+  "spell": {
+    "magic": "%db_explorer",
+    "usage": "%db_explorer <TEXT>"
+  }
+}
