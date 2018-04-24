@@ -6,11 +6,12 @@ import {
 
 import jstree from 'jstree';
 
-let db_explorer;
+window.db_explorer = null;
 let jstreeDOM;
 let contentDOM;
 let currentDatabase = 'greenplum2';
 let notebookController = null;
+let jstreeSearchEngine = null;
 
 export default class DBExplorerSpell extends SpellBase {
     constructor(config) {
@@ -34,6 +35,14 @@ function explorer_init() {
     createOnDestroyListener();
 }
 
+function addShowDBExplorerButton() {
+    $('#actionbar > headroom > h3 > div:nth-child(2) > span:nth-child(1)').append(`
+    <button type="button" class="btn btn-default btn-xs" onclick="dbExplorerToggleDisplay()" title="Show/Hide Database Explorer">
+        <i class="icon-list"></i>
+    </button>
+    `);
+}
+
 
 function createOnDestroyListener() {
     let target = document.querySelector('html');
@@ -42,6 +51,7 @@ function createOnDestroyListener() {
             if (notebookController) {
                 return;
             }
+            addShowDBExplorerButton();
             notebookController = angular.element($('.notebookContent')[0]).scope();
             contentDOM = $('#content')[0];
             notebookController.$on('$destroy', () => {
@@ -71,9 +81,22 @@ function hideDBExplorer() {
     contentDOM.style.marginLeft = "0px";
 }
 
+window.dbExplorerToggleDisplay = function () {
+    if (db_explorer.style.display === 'none' || db_explorer.style.display === ''){
+        showDBExplorer();
+    } else {
+        hideDBExplorer();
+    }
+};
+
 window.dbExplorerSearch = function () {
     let text = $('#inputJstreeSearch')[0].value;
-    jstreeDOM.jstree(true).search(text);
+    jstreeDOM.jstree(true).close_all();
+    jstreeDOM.jstree(true).refresh();
+    showMaxSearchElementBlock(false);
+    if (text !== "") {
+        jstreeDOM.jstree(true).search(text);
+    }
 };
 
 window.dbExplorerChangeHeight = function (px) {
@@ -147,35 +170,114 @@ function explorerTreeInit() {
                 'data': function (str) {
                     return {"search_str": str};
                 },
+            },
+            'search_callback': function (str, node) {
+                if (!jstreeSearchEngine) {
+                    jstreeSearchEngine = new SearchEngine(jstreeDOM.jstree(true));
+                }
+                if (node.text.indexOf(str) === -1) {
+                    return false;
+                }
+                if (jstreeSearchEngine.skip_count < jstreeSearchEngine.MAX_NODES_TO_SKIP) {
+                    jstreeSearchEngine.skip_count++;
+                    return true;
+                } else {
+                    jstreeSearchEngine.addNode(node.original);
+                    return false;
+                }
             }
         }
     }).on('open_node.jstree', function (event, data) {
         data.node.children.forEach(addCommentBlock);
     }).on('redraw.jstree', function (event, data) {
         data.nodes.forEach(addCommentBlock);
+    }).on('search.jstree', function (event, data) {
+        jstreeSearchEngine.runSearch();
     });
     local$(document).on('dnd_stop.vakata', function (data, element) {
         pasteSelectInElement(element.event.toElement, element.data.nodes, element.event.ctrlKey);
     });
 
 /*    local$(document).on('dnd_move.vakata', function (data, element) {
-        debugger;
         let classList = element.helper["0"].childNodes["0"].childNodes["0"].classList;
         if (event.toElement.className === 'ace_content') {
             if (classList.contains('jstree-er')) {
-                debugger;
                 classList.remove('jstree-er');
                 classList.add('jstree-ok');
             }
         } else {
             if (classList.contains('jstree-ok')) {
-                debugger;
                 classList.remove('jstree-ok');
                 classList.add('jstree-er');
             }
         }
     });*/
 
+}
+
+function SearchEngine(jstree) {
+    let queue = [];
+    this.MAX_NODES_TO_SKIP = 20;
+    let MAX_NODES_TO_SHOW = 400;
+    this.skip_count = 0;
+    let timerId;
+    let countShownNode = this.MAX_NODES_TO_SKIP;
+
+    this.runSearch = function run() {
+        for (let i = 0; i < 5; i++) {
+            if (queue.length === 0) {
+                jstreeSearchEngine = null;
+                return;
+            }
+            let node = getNode();
+            jstree.show_node(node.id);
+            jstree.open_node(node.id/*, function (node) {
+                let nodeId = node.id;
+                setTimeout(function callback() {
+                    let elem = jstreeDOM.jstree(true).get_node(nodeId, true)[0];
+                    if (elem && !jstreeSearchEngine) {
+                        elem.classList.add("jstree-search");
+                        return;
+                    }
+                    setTimeout(callback, 100)
+                }, 100);
+            }*/);
+            while (node.parent !== '#') {
+                node = jstree.get_node(node.parent);
+                displayNode(node);
+            }
+            console.log("q[]: " + queue.length + " countShownNode: " + countShownNode + "/" + MAX_NODES_TO_SHOW);
+        }
+
+        if (countShownNode < MAX_NODES_TO_SHOW) {
+            timerId = setTimeout(run, 100);
+        } else {
+            jstreeSearchEngine = null;
+            showMaxSearchElementBlock(true);
+        }
+    };
+
+    this.addNode = function (node) {
+        queue.push(node);
+    };
+
+    function getNode() {
+        return queue.pop();
+    }
+
+    function displayNode(node) {
+        countShownNode++;
+        jstree.show_node(node.id);
+        jstree.open_node(node.id);
+    }
+}
+
+function showMaxSearchElementBlock(show) {
+    if (show) {
+        $("#jstreeMaxElementDiv")[0].style.visibility = "visible";
+    } else {
+        $("#jstreeMaxElementDiv")[0].style.visibility = "collapse";
+    }
 }
 
 function pasteSelectInElement(element, nodesIds, ctrlKey) {
@@ -354,6 +456,7 @@ function createExplorer() {
 
     <div id="jstreeDiv">
         <div id="jstree"></div>
+        <div id="jstreeMaxElementDiv"><h4>Too many elements to display</h4></div>
     </div>
 
 </div>
@@ -407,11 +510,37 @@ function injectCSS() {
     border: 5px ridge;
 }
 
+#jstreeMaxElementDiv {
+    visibility: collapse;
+    vertical-align:middle;
+    display: table-cell;
+    padding: 15px;
+    width: 1000px;
+    height: 100px;
+    border: 2px solid #525252;
+    border-radius: 15px;
+    background: repeating-linear-gradient(
+            135deg,
+            rgba(255, 205, 0, 0.30),
+            rgba(255, 205, 0, 0.30) 10px,
+            rgba(255, 0, 6, 0.30) 10px,
+            rgba(255, 0, 6, 0.30) 20px
+    );
+}
+
+#jstreeMaxElementDiv h4 {
+    font-size: 25px;
+    text-align: center;
+    color: white;
+    text-shadow: 1px 1px 5px black, -1px -1px 5px black
+}
+
 .jstree-er {
     url: none !important;
 }
 
 .db-explorer {
+    display: none;
     width: 300px;
     position: fixed;
     left: 10px;
