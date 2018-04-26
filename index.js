@@ -564,8 +564,6 @@ function injectCSS() {
     padding: 15px;
     width: 1000px;
     height: 100px;
-    border: 2px solid #525252;
-    border-radius: 15px;
     background: repeating-linear-gradient(
             135deg,
             rgba(0,32,255,0.15),
