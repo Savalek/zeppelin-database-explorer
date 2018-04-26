@@ -38,7 +38,7 @@ function explorer_init() {
 function addShowDBExplorerButton() {
     $('#actionbar > headroom > h3 > div:nth-child(2) > span:nth-child(1)').append(`
     <button type="button" class="btn btn-default btn-xs" onclick="dbExplorerToggleDisplay()" title="Show/Hide Database Explorer">
-        <i class="icon-list"></i>
+        <i class="icon-layers"></i>
     </button>
     `);
 }
@@ -71,7 +71,7 @@ function createOnDestroyListener() {
 }
 
 function showDBExplorer() {
-    db_explorer.style.display = 'block';
+    db_explorer.style.display = 'flex';
     db_explorer.style.width = '300px';
     contentDOM.style.marginLeft = '310px';
 }
@@ -82,14 +82,24 @@ function hideDBExplorer() {
 }
 
 window.dbExplorerToggleDisplay = function () {
-    if (db_explorer.style.display === 'none' || db_explorer.style.display === ''){
+    if (db_explorer.style.display === 'none' || db_explorer.style.display === '') {
         showDBExplorer();
     } else {
         hideDBExplorer();
     }
 };
 
-window.dbExplorerSearch = function () {
+window.dbExplorerSearch = function (event) {
+    if (event) {
+        let key = event.which || event.keyCode;
+        if (key !== 13) {
+            return;
+        }
+    }
+
+    if (jstreeSearchEngine) {
+        return;
+    }
     let text = $('#inputJstreeSearch')[0].value;
     jstreeDOM.jstree(true).close_all();
     jstreeDOM.jstree(true).refresh();
@@ -100,7 +110,7 @@ window.dbExplorerSearch = function () {
 };
 
 window.dbExplorerChangeHeight = function (px) {
-    let currentSize = db_explorer.clientWidth + px;
+    let currentSize = px;
     if (currentSize < 257) {
         currentSize = 257;
     }
@@ -126,6 +136,27 @@ window.dbExplorerChangeDatabase = function (name) {
     currentDatabase = name;
 };
 
+let dbExplorerResizerMouseDown = false;
+
+window.dbExplorerMouseMove = function (event) {
+    if (!dbExplorerResizerMouseDown) {
+        return;
+    }
+    dbExplorerChangeHeight(event.clientX);
+};
+
+window.dbExplorerMouseDown = function (event) {
+    dbExplorerResizerMouseDown = true;
+    db_explorer.style.transition = "none";
+};
+
+$(document).mousemove(dbExplorerMouseMove);
+
+$(document).mouseup(function () {
+    dbExplorerResizerMouseDown = false;
+    db_explorer.style.transition = "all .2s ease-in-out";
+});
+
 function explorerTreeInit() {
     let local$ = require('jquery');
     jstreeDOM = local$('#jstree');
@@ -150,9 +181,9 @@ function explorerTreeInit() {
             }
         },
         'core': {
-            'animation' : 0,
+            'animation': 0,
             'worker': false,
-            'force_text' : true,
+            'force_text': true,
             'check_callback': function () {
                 return false;
             },
@@ -197,28 +228,16 @@ function explorerTreeInit() {
     local$(document).on('dnd_stop.vakata', function (data, element) {
         pasteSelectInElement(element.event.toElement, element.data.nodes, element.event.ctrlKey);
     });
-
-/*    local$(document).on('dnd_move.vakata', function (data, element) {
-        let classList = element.helper["0"].childNodes["0"].childNodes["0"].classList;
-        if (event.toElement.className === 'ace_content') {
-            if (classList.contains('jstree-er')) {
-                classList.remove('jstree-er');
-                classList.add('jstree-ok');
-            }
-        } else {
-            if (classList.contains('jstree-ok')) {
-                classList.remove('jstree-ok');
-                classList.add('jstree-er');
-            }
-        }
-    });*/
+    local$(document).on('dnd_move.vakata', function () {
+        $('#jstree-dnd > i').remove();
+    });
 
 }
 
 function SearchEngine(jstree) {
     let queue = [];
     this.MAX_NODES_TO_SKIP = 20;
-    let MAX_NODES_TO_SHOW = 400;
+    let MAX_NODES_TO_SHOW = 300;
     this.skip_count = 0;
     let timerId;
     let countShownNode = this.MAX_NODES_TO_SKIP;
@@ -231,22 +250,11 @@ function SearchEngine(jstree) {
             }
             let node = getNode();
             jstree.show_node(node.id);
-            jstree.open_node(node.id/*, function (node) {
-                let nodeId = node.id;
-                setTimeout(function callback() {
-                    let elem = jstreeDOM.jstree(true).get_node(nodeId, true)[0];
-                    if (elem && !jstreeSearchEngine) {
-                        elem.classList.add("jstree-search");
-                        return;
-                    }
-                    setTimeout(callback, 100)
-                }, 100);
-            }*/);
+            jstree.open_node(node.id);
             while (node.parent !== '#') {
                 node = jstree.get_node(node.parent);
                 displayNode(node);
             }
-            console.log("q[]: " + queue.length + " countShownNode: " + countShownNode + "/" + MAX_NODES_TO_SHOW);
         }
 
         if (countShownNode < MAX_NODES_TO_SHOW) {
@@ -295,10 +303,15 @@ function pasteSelectInElement(element, nodesIds, ctrlKey) {
     let textToPasteInEditor;
 
     if (nodesIds.length === 1 && !ctrlKey) {
-        textToPasteInEditor = getNameWithParent(nodesIds[0]);
+        let node = jstreeDOM.jstree(true).get_node(nodesIds[0]);
+        if (node.type === "column") {
+            textToPasteInEditor = node.text.split(' ')[0];
+        } else {
+            textToPasteInEditor = getNameWithParent(nodesIds[0]);
+        }
     }
     if (nodesIds.length > 1 && !ctrlKey) {
-        textToPasteInEditor = stringListOfNodes(nodesIds);
+        textToPasteInEditor = stringListOfNodes(nodesIds, true);
     }
     if (nodesIds.length >= 1 && ctrlKey) {
         textToPasteInEditor = generateAndPasteSQLSelect(aceEditor, nodesIds);
@@ -362,10 +375,18 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
     }
 }
 
-function stringListOfNodes(nodesIds) {
+function stringListOfNodes(nodesIds, columnsWithoutTable) {
     let list = [];
-    nodesIds.forEach(function (elem) {
-        list.push(getNameWithParent(elem));
+    nodesIds.forEach(function (id) {
+        if (columnsWithoutTable) {
+            let node = jstreeDOM.jstree(true).get_node(id);
+            if (node.type === "column") {
+                list.push(node.text.split(' ')[0]);
+                return;
+            }
+        }
+
+        list.push(getNameWithParent(id));
     });
     return list.join(", ");
 }
@@ -436,40 +457,42 @@ function createExplorer() {
     return $(`
 <div class="db-explorer box">
 
-    <h3>Database Explorer</h3>
 
-    <div id="dbExplorerResizeButtons" class="control-buttons btn-group  btn-group-sm resize-button-group">
-        <a class="btn btn-info" onclick="dbExplorerChangeHeight(-50)"><i class="glyphicon glyphicon-chevron-left"></i></a>
-        <a class="btn btn-info" onclick="dbExplorerChangeHeight(50)"><i class="glyphicon glyphicon-chevron-right"></i></a>
-    </div>
-
-    <select class="form-control" id="databaseSelect" onchange="dbExplorerChangeDatabase(this.value)">
-        <option>greenplum2</option>
-        <option>hive</option>
-        <option>sap</option>
-    </select>
 
     <div class="form-group">
-        <input id="inputJstreeSearch" type="text" class="form-control">
+        <select class="form-control" id="databaseSelect" onchange="dbExplorerChangeDatabase(this.value)">
+            <option>greenplum2</option>
+            <option>hive</option>
+            <option>sap</option>
+        </select>
+    <div class="btn-group cool-border">
+        <input id="inputJstreeSearch" type="text" onkeypress="dbExplorerSearch(event)" class="form-control">
         <a id="buttonJstreeSearch" class="btn btn-info" onclick="dbExplorerSearch()"><i class="glyphicon glyphicon-search"></i></a>
+    </div>
     </div>
 
     <div id="jstreeDiv">
         <div id="jstree"></div>
         <div id="jstreeMaxElementDiv"><h4>Too many elements to display</h4></div>
     </div>
-
+    
+    <div id="dbExplorerResizer" onmousedown="dbExplorerMouseDown(event)"></div>
 </div>
 `)
 }
-
 
 function injectCSS() {
     $(`<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/themes/default/style.min.css"/>`).appendTo('head');
     $(`
 <style>
-#content {
-    transition: all .2s ease-in-out;
+#dbExplorerResizer {
+    width: 15px;
+    height: 100%;
+    position: absolute;
+    right: 1px;
+    top: 0px;
+    cursor: col-resize;
+
 }
 
 #jstree {
@@ -477,16 +500,13 @@ function injectCSS() {
     margin-top: 5px;
 }
 
-#dbExplorerResizeButtons {
-    float: left;
-    margin-right: 10px;
-    display: inline-block;
+#jstree a {
+    user-select: none;
 }
 
 #inputJstreeSearch {
     width: 182px;
     display: inline-block;
-    float: left;
 }
 
 #buttonJstreeSearch {
@@ -497,14 +517,15 @@ function injectCSS() {
 #databaseSelect {
     margin-bottom: 5px;
     margin-right: 5px;
-    width: 150px;
+    width: 226px;
     float: left;
-    display: inline-block;
+    border: 2px solid #5bc0de;
+    height: 38px;
 }
 
 #jstreeDiv {
+    flex-grow: 1;
     overflow: auto;
-    height: 86%;
     background-color: white;
     border-radius: 5px;
     border: 5px ridge;
@@ -521,25 +542,34 @@ function injectCSS() {
     border-radius: 15px;
     background: repeating-linear-gradient(
             135deg,
-            rgba(255, 205, 0, 0.30),
-            rgba(255, 205, 0, 0.30) 10px,
-            rgba(255, 0, 6, 0.30) 10px,
-            rgba(255, 0, 6, 0.30) 20px
+            rgba(0,32,255,0.15),
+            rgba(0,32,255,0.15) 10px,
+            rgba(255,114,0,0.15) 10px,
+            rgba(255,114,0,0.15) 20px
     );
 }
 
+
 #jstreeMaxElementDiv h4 {
+    user-select: none;
     font-size: 25px;
     text-align: center;
     color: white;
     text-shadow: 1px 1px 5px black, -1px -1px 5px black
 }
 
-.jstree-er {
-    url: none !important;
+.db-explorer .form-group {
+    margin-bottom: 5px;
+}
+
+.cool-border {
+    background-color: #5bc0de;
+    border-radius: 5px;
+    padding: 2px;
 }
 
 .db-explorer {
+    flex-direction: column;
     display: none;
     width: 300px;
     position: fixed;
@@ -551,23 +581,6 @@ function injectCSS() {
     transition: all .2s ease-in-out;
 }
 
-.db-explorer > h3{
-    margin-top: 5px;
-}
-
-.db-explorer > select{
-    display: inline-block;
-    width: 120px;
-}
-
-.db-explorer .form-group{
-    width: 227px;
-    display: inline-block;
-}
-
-.resize-button-group {
-    margin-right: 5px;
-}
 
 .db-explorer-full-size {
     top: 10px;
