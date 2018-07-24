@@ -36,9 +36,12 @@ import jstree from 'jstree';
 window.db_explorer = null;
 let jstreeDOM;
 let contentDOM;
-let currentDatabase = 'greenplum2';
 let notebookController = null;
-let jstreeSearchEngine = null;
+let SEARCH_PARAM = null;
+
+let databases = [];
+let currentDatabase = null;
+let SERVER_URL = 'http://' + document.location.href.split('/')[2] + '/api/metadatacache/jstree';
 
 export default class DBExplorerSpell extends SpellBase {
     constructor(config) {
@@ -57,9 +60,23 @@ function explorer_init() {
     db_explorer = createExplorer();
     angular.element(document.body).append(db_explorer);
     createObserver(db_explorer);
-    explorerTreeInit();
     db_explorer = db_explorer[0];
-    createOnDestroyListener();
+
+    databaseServerRequest("/databases_list", function (responseText) {
+        let answer = JSON.parse(responseText).body;
+        answer.forEach(e => databases.push(e));
+        currentDatabase = databases[0];
+        explorerTreeInit();
+        createOnDestroyListener();
+    });
+
+    databaseServerRequest("/get_search_limit", function (responseText) {
+        let max_element = parseInt(responseText);
+        SEARCH_PARAM = {
+            'MAX_DISPLAYED_ELEMENTS': max_element,
+            'CURRENT_DISPLAYED': 0
+        };
+    })
 }
 
 function addShowDBExplorerButton() {
@@ -70,6 +87,15 @@ function addShowDBExplorerButton() {
     `);
 }
 
+function databaseServerRequest(request, callback) {
+    let xhr = new XMLHttpRequest();
+    xhr.open('GET', SERVER_URL + request, true);
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState !== XMLHttpRequest.DONE) return;
+        callback(xhr.responseText);
+    };
+    xhr.send();
+}
 
 function createOnDestroyListener() {
     let target = document.querySelector('html');
@@ -89,7 +115,7 @@ function createOnDestroyListener() {
         } catch (e) {
         }
         if (notebookController && contentDOM) {
-            //showDBExplorer();
+            showDBExplorer();
             this.disconnect();
         }
 
@@ -123,11 +149,8 @@ window.dbExplorerSearch = function (event) {
             return;
         }
     }
-
-    if (jstreeSearchEngine) {
-        return;
-    }
     let text = $('#inputJstreeSearch')[0].value;
+    jstreeDOM.jstree(true).clear_search();
     jstreeDOM.jstree(true).close_all();
     jstreeDOM.jstree(true).refresh();
     showMaxSearchElementBlock(false);
@@ -152,15 +175,18 @@ window.dbExplorerChangeDatabase = function (name) {
     if (currentDatabase === name) {
         return;
     }
-    jstreeDOM.jstree(true).settings.core.data.url =
-        'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + name;
-    jstreeDOM.jstree(true).settings.search.ajax.url =
-        'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + name;
-    jstreeDOM.jstree(true).settings.massload.url =
-        'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + name;
+    /*    let newURL = SERVER_URL + 'database=' + name;
+        jstreeDOM.jstree(true).settings.core.data.url = newURL;
+        jstreeDOM.jstree(true).settings.massload.url = newURL;*/
+
+    showMaxSearchElementBlock(false);
+
+    currentDatabase = name;
+
+    jstreeDOM.jstree(true).settings.search.ajax.url = SERVER_URL + '/search?database=' + currentDatabase;
+
     jstreeDOM.jstree(true).close_all();
     jstreeDOM.jstree(true).refresh();
-    currentDatabase = name;
 };
 
 let dbExplorerResizerMouseDown = false;
@@ -188,11 +214,20 @@ function explorerTreeInit() {
     let local$ = require('jquery');
     jstreeDOM = local$('#jstree');
 
+    let databaseSelect = document.getElementById("databaseSelect");
+    databases.forEach(function (databaseName) {
+        let option = document.createElement("option");
+        option.text = databaseName;
+        databaseSelect.add(option);
+    });
+
+    let initServerURL = SERVER_URL + 'database=' + currentDatabase;
     jstreeDOM.jstree({
-        'plugins': ['json_data', 'types', 'dnd', 'search', 'massload'],
+        'plugins': ['json_data', 'types', 'dnd', 'search', 'massload', 'contextmenu', 'sort'],
         'types': {
             'column': {
-                'icon': 'glyphicon glyphicon-tag my-glyphicon-color-tag'
+                'icon': 'glyphicon glyphicon-tag my-glyphicon-color-tag',
+                'a_attr': { 'style': 'font-family: monospace' }
             },
             'table': {
                 'icon': 'glyphicon glyphicon-list-alt my-glyphicon-color-alt'
@@ -201,47 +236,110 @@ function explorerTreeInit() {
                 'icon': 'glyphicon glyphicon-tasks my-glyphicon-color-tasks'
             }
         },
+        'sort': function (nodeId1, nodeId2) {
+            let jsTree = jstreeDOM.jstree(true);
+            let node1 = jsTree.get_node(nodeId1).original;
+            let node2 = jsTree.get_node(nodeId2).original;
+            debugger;
+            if (node1.type === 'schema' && node2.type === 'schema') {
+                return new Intl.Collator().compare(node1.text, node2.text);
+            }
+        },
         'massload': {
-            'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + currentDatabase,
+            'url': SERVER_URL + '/massload',
             'data': function (nodes) {
-                return {'ids': nodes.join(',')};
+                return {
+                    'ids': nodes.join(','),
+                    'database': currentDatabase
+                };
             }
         },
         'core': {
             'animation': 0,
             'worker': false,
-            'force_text': true,
+            // 'force_text': true,
             'check_callback': function () {
                 return false;
             },
             'data': {
-                'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + currentDatabase,
+                'url': SERVER_URL + '/get_children',
                 'data': function (node) {
-                    return {'id': node.id};
+                    let req = {
+                        'id': node.id,
+                        'type': node.type,
+                        'database': currentDatabase
+                    };
+                    if (node.type === "table") {
+                        req['schemaId'] = node.parent;
+                    }
+                    return req;
                 }
             }
         },
         'search': {
             'show_only_matches': true,
             'ajax': {
-                'url': 'http://zeppelin-test.dwh.tinkoff.cloud:8082?file=' + currentDatabase,
-                'data': function (str) {
-                    return {"search_str": str};
-                },
+                'url': SERVER_URL + '/search?database=' + currentDatabase
             },
             'search_callback': function (str, node) {
-                if (!jstreeSearchEngine) {
-                    jstreeSearchEngine = new SearchEngine(jstreeDOM.jstree(true));
+                if (SEARCH_PARAM.CURRENT_DISPLAYED <= SEARCH_PARAM.MAX_DISPLAYED_ELEMENTS) {
+                    if (node.text.split(' ')[0].indexOf(str) !== -1) {
+                        SEARCH_PARAM.CURRENT_DISPLAYED++;
+                        return true;
+                    }
                 }
-                if (node.text.indexOf(str) === -1) {
-                    return false;
-                }
-                if (jstreeSearchEngine.skip_count < jstreeSearchEngine.MAX_NODES_TO_SKIP) {
-                    jstreeSearchEngine.skip_count++;
-                    return true;
-                } else {
-                    jstreeSearchEngine.addNode(node.original);
-                    return false;
+                return false;
+            }
+        },
+        'contextmenu': {
+            'items': {
+                'reload': {
+                    'label': () => jstreeDOM.jstree("get_selected").length === 1 ? 'Reload element' : 'Reload selected elements',
+                    'action': function (obj) {
+                        let selectedIds = jstreeDOM.jstree("get_selected");
+                        selectedIds.forEach(function (id) {
+                            let elem = jstreeDOM.jstree(true).get_node(id);
+                            if (elem.type === 'column') {
+                                return;
+                            }
+                            let request = "/refresh_element?database=" + currentDatabase;
+                            request += "&id=" + elem.id;
+                            if (elem.type === 'table') {
+                                request += "&schemaId=" + elem.parent;
+                            }
+                            databaseServerRequest(request, function () {
+                                jstreeDOM.jstree(true).refresh_node(elem);
+                            });
+                        });
+
+                    },
+                    '_disabled': function (obj) {
+                        let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
+                        if (elem.type === 'column') {
+                            return true;
+                        }
+                    }
+                },
+                'reload_rec': {
+                    'label': 'Reload recursively',
+                    'action': function (obj) {
+                        let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
+                        let request = "/refresh_element?database=" + currentDatabase;
+                        request += "&id=" + elem.id;
+                        request += "&recursively=" + true;
+                        databaseServerRequest(request, function () {
+                            jstreeDOM.jstree(true).refresh_node(elem);
+                        });
+                    },
+                    '_disabled': function (obj) {
+                        if (jstreeDOM.jstree("get_selected").length !== 1) {
+                            return true;
+                        }
+                        let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
+                        if (elem.type !== 'schema') {
+                            return true;
+                        }
+                    }
                 }
             }
         }
@@ -250,60 +348,26 @@ function explorerTreeInit() {
     }).on('redraw.jstree', function (event, data) {
         data.nodes.forEach(addCommentBlock);
     }).on('search.jstree', function (event, data) {
-        jstreeSearchEngine.runSearch();
+        let limitExceeded = SEARCH_PARAM.CURRENT_DISPLAYED >= SEARCH_PARAM.MAX_DISPLAYED_ELEMENTS;
+        showMaxSearchElementBlock(limitExceeded);
+        SEARCH_PARAM.CURRENT_DISPLAYED = 0;
+    }).on('load_node.jstree', function (event, data) {
+
+        if (data.node.original && data.node.original.type === 'table') {
+            let nodes = data.node.children.map(id => jstreeDOM.jstree(true).get_node(id));
+            let maxLength = Math.max.apply(null, nodes.map(node => node.text.length)) + 3;
+            nodes.forEach(function (node) {
+                let spaces = ' '.repeat(maxLength - node.original.text.length);
+                node.text = node.original.text + spaces + '<span class = "column-type-span">' + node.original.value_type + '</span>';
+            });
+        }
     });
     local$(document).on('dnd_stop.vakata', function (data, element) {
-        pasteSelectInElement(element.event.toElement, element.data.nodes, element.event.ctrlKey);
+        pasteSelectInElement(element.event.target, element.data.nodes, element.event.ctrlKey);
     });
     local$(document).on('dnd_move.vakata', function () {
         $('#jstree-dnd > i').remove();
     });
-
-}
-
-function SearchEngine(jstree) {
-    let queue = [];
-    this.MAX_NODES_TO_SKIP = 20;
-    let MAX_NODES_TO_SHOW = 300;
-    this.skip_count = 0;
-    let countShownNode = this.MAX_NODES_TO_SKIP;
-
-    this.runSearch = function run() {
-        for (let i = 0; i < 5; i++) {
-            if (queue.length === 0) {
-                jstreeSearchEngine = null;
-                return;
-            }
-            let node = getNode();
-            jstree.show_node(node.id);
-            jstree.open_node(node.id);
-            while (node.parent !== '#') {
-                node = jstree.get_node(node.parent);
-                displayNode(node);
-            }
-        }
-
-        if (countShownNode < MAX_NODES_TO_SHOW) {
-            setTimeout(run, 100);
-        } else {
-            jstreeSearchEngine = null;
-            showMaxSearchElementBlock(true);
-        }
-    };
-
-    this.addNode = function (node) {
-        queue.push(node);
-    };
-
-    function getNode() {
-        return queue.pop();
-    }
-
-    function displayNode(node) {
-        countShownNode++;
-        jstree.show_node(node.id);
-        jstree.open_node(node.id);
-    }
 }
 
 function showMaxSearchElementBlock(show) {
@@ -352,7 +416,7 @@ function pasteSelectInElement(element, nodesIds, ctrlKey) {
 
 function generateAndPasteSQLSelect(aceEditor, nodesIds) {
     let tablesIds = new Set();
-    let colomunsIds = new Set();
+    let columnsIds = new Set();
     nodesIds.forEach(function (id) {
         let node = jstreeDOM.jstree(true).get_node(id);
 
@@ -360,11 +424,11 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
 
             case 'table':
                 tablesIds.add(id);
-                node.children.forEach(childId => colomunsIds.add(childId));
+                node.children.forEach(childId => columnsIds.add(childId));
                 break;
 
             case 'column':
-                colomunsIds.add(id);
+                columnsIds.add(id);
                 let nodeParent = jstreeDOM.jstree(true).get_node(node.parent);
                 tablesIds.add(nodeParent.id);
                 break;
@@ -377,7 +441,7 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
         if (!jstreeDOM.jstree(true).is_loaded(id)) {
             needToLoadChildren = true;
             jstreeDOM.jstree(true).load_node(id, function callback(node) {
-                node.children.forEach(childId => colomunsIds.add(childId));
+                node.children.forEach(childId => columnsIds.add(childId));
                 let allLoaded = true;
                 for (let i = 0; i < tablesIds.length && allLoaded; i++) {
                     allLoaded = jstreeDOM.jstree(true).is_loaded(tablesIds[i]);
@@ -395,7 +459,7 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
     }
 
     function pasteSelect() {
-        let select = 'SELECT ' + stringListOfNodes(colomunsIds) + '\n';
+        let select = 'SELECT ' + stringListOfNodes(columnsIds) + '\n';
         select += 'FROM ' + stringListOfNodes(tablesIds);
         aceEditor.session.insert(aceEditor.getCursorPosition(), select);
     }
@@ -444,18 +508,19 @@ function addCommentBlock(id) {
     if (!jstreeDOM.jstree(true).get_node(id).original) {
         return;
     }
-    let commentText = jstreeDOM.jstree(true).get_node(id).original.comment;
+    let commentText = jstreeDOM.jstree(true).get_node(id).original.description;
     if (!commentText) {
         return;
     }
     let nodeDOM = jstreeDOM.jstree(true).get_node(id, true);
+    if (nodeDOM.length === 0) {
+        return;
+    }
     let info = document.createElement('i');
     info.className = "glyphicon glyphicon-info-sign my-glyphicon-color-comment";
     info.style.paddingLeft = "10px";
     info.setAttribute('title', commentText);
-    if (nodeDOM["0"] && nodeDOM["0"].children["1"].children.length === 1) {
-        nodeDOM["0"].children["1"].append(info);
-    }
+    nodeDOM["0"].children["1"].append(info);
 
     let node = jstreeDOM.jstree(true).get_node(id);
     if (node.children.length !== 0) {
@@ -487,9 +552,6 @@ function createExplorer() {
 
     <div class="form-group">
         <select class="form-control" id="databaseSelect" onchange="dbExplorerChangeDatabase(this.value)">
-            <option>greenplum2</option>
-            <option>hive</option>
-            <option>sap</option>
         </select>
     <div class="btn-group cool-border">
         <input id="inputJstreeSearch" type="text" onkeypress="dbExplorerSearch(event)" class="form-control">
@@ -528,6 +590,7 @@ function injectCSS() {
 
 #jstree a {
     user-select: none;
+    white-space: pre;
 }
 
 #inputJstreeSearch {
@@ -553,8 +616,10 @@ function injectCSS() {
     flex-grow: 1;
     overflow: auto;
     background-color: white;
-    border-radius: 5px;
-    border: 5px ridge;
+    border-radius: 4px;
+    border-style: solid;
+    border-width: 2px;
+    border-color: #5bc0de;on
 }
 
 #jstreeMaxElementDiv {
@@ -589,7 +654,7 @@ function injectCSS() {
 .cool-border {
     background-color: #5bc0de;
     border-radius: 5px;
-    padding: 2px;
+    padding: 2px 2px 1px 2px;;
 }
 
 .db-explorer {
@@ -615,15 +680,20 @@ function injectCSS() {
 }
 
 .my-glyphicon-color-tag {
-    color: #148e00 !important;
+    color: #007a90a3 !important;
 }
 
 .my-glyphicon-color-alt {
-    color: #ff9452 !important;
+    color: #d370e2 !important;
 }
 
 .my-glyphicon-color-comment {
     color: rgba(0, 0, 0, 0.34) !important;
+}
+
+.column-type-span {
+    color: #2400d473;
+    font-weight: bold;
 }
 </style>
 `).appendTo('head')
