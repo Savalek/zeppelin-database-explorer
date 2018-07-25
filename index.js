@@ -240,7 +240,6 @@ function explorerTreeInit() {
             let jsTree = jstreeDOM.jstree(true);
             let node1 = jsTree.get_node(nodeId1).original;
             let node2 = jsTree.get_node(nodeId2).original;
-            debugger;
             if (node1.type === 'schema' && node2.type === 'schema') {
                 return new Intl.Collator().compare(node1.text, node2.text);
             }
