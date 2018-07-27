@@ -127,11 +127,13 @@ function showDBExplorer() {
     db_explorer.style.display = 'flex';
     db_explorer.style.width = '300px';
     contentDOM.style.marginLeft = '310px';
+    window.dispatchEvent(new Event('resize'));
 }
 
 function hideDBExplorer() {
     db_explorer.style.display = 'none';
     contentDOM.style.marginLeft = "0px";
+    window.dispatchEvent(new Event('resize'));
 }
 
 window.dbExplorerToggleDisplay = function () {
@@ -208,6 +210,7 @@ $(document).mousemove(dbExplorerMouseMove);
 $(document).mouseup(function () {
     dbExplorerResizerMouseDown = false;
     db_explorer.style.transition = "all .2s ease-in-out";
+    window.dispatchEvent(new Event('resize'));
 });
 
 function explorerTreeInit() {
