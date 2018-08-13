@@ -6,5 +6,7 @@ More info about `zeppelin spell`:  [writing_spell](https://zeppelin.apache.org/d
 ## Install
 1. Clone repository in `{Zeppelin Folder}/zeppelin-examples`  
 2. Clone file `zeppelin-database-explorer.json` in `{Zeppelin Folder}/helium`
-3. enable and configure in
-![spell_page_img][/img/spell_settings.png]
+3. enable and configure in  
+<p align="center">
+  <img src="https://github.com/Savalek/zeppelin-database-explorer/blob/master/img/spell_settings.png">
+</p>
