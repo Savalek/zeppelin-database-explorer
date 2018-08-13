@@ -5,5 +5,17 @@
   "description": "Display a database structure (for JDBS interpreters)",
   "artifact": "./zeppelin-examples/zeppelin-database-explorer",
   "license": "ICS",
-  "icon": "<i class='fa fa-folder-open'></i>"
+  "icon": "<i class='fa fa-folder-open'></i>",
+  "config": {
+    "metaserver_port": {
+      "type": "number",
+      "description": "Port for connection to metadata server",
+      "defaultValue": 8090
+    },
+    "metaserver_url": {
+      "type": "string",
+      "description": "URL for connection to metadata server",
+      "defaultValue": "localhost"
+    }
+  }
 }

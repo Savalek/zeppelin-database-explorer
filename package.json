@@ -1,9 +1,9 @@
 {
   "name": "zeppelin-database-explorer",
   "description": "Display a data tree (for example, a database structure)",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "main": "index",
-  "author": "",
+  "author": "Savalek",
   "license": "Apache-2.0",
   "dependencies": {
     "zeppelin-spell": "*",

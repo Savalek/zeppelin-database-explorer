@@ -41,13 +41,24 @@ let SEARCH_PARAM = null;
 
 let databases = [];
 let currentDatabase = null;
-let SERVER_URL = 'http://' + document.location.href.split('/')[2] + '/api/metadatacache/jstree';
+let SPELL_CONFIG_URL = 'http://' + document.location.href.split('/')[2] + '/api/helium/spell/config/zeppelin-database-explorer';
+// let SPELL_CONFIG_URL = 'http://' + document.location.href.split('/')[2].split(':')[0] + ':8080' + '/api/helium/spell/config/zeppelin-database-explorer';
+
+let SERVER_URL = null;
+// let SERVER_URL = 'http://' + document.location.href.split('/')[2].split(':')[0] + ':8090' + '/jstree';
+
 
 export default class DBExplorerSpell extends SpellBase {
     constructor(config) {
         super("%db_explorer");
         injectCSS();
-        explorer_init();
+        databaseServerRequest(SPELL_CONFIG_URL, function (responseText) {
+            let body = JSON.parse(responseText).body;
+            let metaserverUrl = body.confPersisted.metaserver_url || body.confSpec.metaserver_url.defaultValue;
+            let metaserverPort = body.confPersisted.metaserver_port || body.confSpec.metaserver_port.defaultValue;
+            SERVER_URL = 'http://' + metaserverUrl + ':' + metaserverPort + '/jstree';
+            explorer_init();
+        });
     }
 
     interpret(paragraphText, config) {
@@ -62,15 +73,15 @@ function explorer_init() {
     createObserver(db_explorer);
     db_explorer = db_explorer[0];
 
-    databaseServerRequest("/databases_list", function (responseText) {
-        let answer = JSON.parse(responseText).body;
+    databaseServerRequest(SERVER_URL + "/databases_list", function (responseText) {
+        let answer = JSON.parse(responseText);
         answer.forEach(e => databases.push(e));
         currentDatabase = databases[0];
         explorerTreeInit();
         createOnDestroyListener();
     });
 
-    databaseServerRequest("/get_search_limit", function (responseText) {
+    databaseServerRequest(SERVER_URL + "/get_search_limit", function (responseText) {
         let max_element = parseInt(responseText);
         SEARCH_PARAM = {
             'MAX_DISPLAYED_ELEMENTS': max_element,
@@ -89,7 +100,7 @@ function addShowDBExplorerButton() {
 
 function databaseServerRequest(request, callback) {
     let xhr = new XMLHttpRequest();
-    xhr.open('GET', SERVER_URL + request, true);
+    xhr.open('GET', request, true);
     xhr.onreadystatechange = function () {
         if (xhr.readyState !== XMLHttpRequest.DONE) return;
         callback(xhr.responseText);
