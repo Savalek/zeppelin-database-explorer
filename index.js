@@ -126,7 +126,7 @@ function createOnDestroyListener() {
         } catch (e) {
         }
         if (notebookController && contentDOM) {
-            showDBExplorer();
+            //showDBExplorer();
             this.disconnect();
         }
 
