@@ -320,7 +320,7 @@ function explorerTreeInit() {
                             if (elem.type === 'table') {
                                 request += "&schemaId=" + elem.parent;
                             }
-                            databaseServerRequest(request, function () {
+                            databaseServerRequest(SERVER_URL + request, function () {
                                 jstreeDOM.jstree(true).refresh_node(elem);
                             });
                         });
@@ -340,7 +340,7 @@ function explorerTreeInit() {
                         let request = "/refresh_element?database=" + currentDatabase;
                         request += "&id=" + elem.id;
                         request += "&recursively=" + true;
-                        databaseServerRequest(request, function () {
+                        databaseServerRequest(SERVER_URL + request, function () {
                             jstreeDOM.jstree(true).refresh_node(elem);
                         });
                     },
