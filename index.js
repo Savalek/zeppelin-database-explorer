@@ -248,6 +248,22 @@ function explorerTreeInit() {
             },
             'schema': {
                 'icon': 'glyphicon glyphicon-tasks my-glyphicon-color-tasks'
+            },
+            'universe': {
+                'icon': 'glyphicon glyphicon-tasks my-glyphicon-color-tasks'
+             },
+            'dimension': {
+                'icon': 'glyphicon glyphicon-list-alt my-glyphicon-color-alt'
+            },
+            'measure': {
+                'icon': 'glyphicon glyphicon-stats my-glyphicon-color-stats'
+            },
+            'filter': {
+                'icon': 'glyphicon glyphicon-filter my-glyphicon-color-filter'
+            },
+            'attribute': {
+                'icon': 'glyphicon glyphicon-tag my-glyphicon-color-tag',
+                'a_attr': { 'style': 'font-family: monospace' }
             }
         },
         'sort': function (nodeId1, nodeId2) {
@@ -255,6 +271,9 @@ function explorerTreeInit() {
             let node1 = jsTree.get_node(nodeId1).original;
             let node2 = jsTree.get_node(nodeId2).original;
             if (node1.type === 'schema' && node2.type === 'schema') {
+                return new Intl.Collator().compare(node1.text, node2.text);
+            }
+            if (node1.type === 'universe' && node2.type === 'universe') {
                 return new Intl.Collator().compare(node1.text, node2.text);
             }
         },
@@ -285,6 +304,9 @@ function explorerTreeInit() {
                     if (node.type === "table") {
                         req['schemaId'] = node.parent;
                     }
+                    if (node.type === "dimension" || node.type === "measure" || node.type === "filter") {
+                        req['universeId'] = node.parent;
+                    }
                     return req;
                 }
             }
@@ -312,13 +334,16 @@ function explorerTreeInit() {
                         let selectedIds = jstreeDOM.jstree("get_selected");
                         selectedIds.forEach(function (id) {
                             let elem = jstreeDOM.jstree(true).get_node(id);
-                            if (elem.type === 'column') {
+                            if (elem.type === 'column' || elem.type === "attribute") {
                                 return;
                             }
                             let request = "/refresh_element?database=" + currentDatabase;
                             request += "&id=" + elem.id;
                             if (elem.type === 'table') {
                                 request += "&schemaId=" + elem.parent;
+                            }
+                            if (elem.type === 'dimension' || elem.type === 'measure' || elem.type === 'filter') {
+                                request += "&universeId=" + elem.parent;
                             }
                             databaseServerRequest(SERVER_URL + request, function () {
                                 jstreeDOM.jstree(true).refresh_node(elem);
@@ -328,7 +353,7 @@ function explorerTreeInit() {
                     },
                     '_disabled': function (obj) {
                         let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
-                        if (elem.type === 'column') {
+                        if (elem.type === 'column' || elem.type === 'attribute') {
                             return true;
                         }
                     }
@@ -349,7 +374,7 @@ function explorerTreeInit() {
                             return true;
                         }
                         let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
-                        if (elem.type !== 'schema') {
+                        if (elem.type !== 'schema' && elem.type !== 'universe') {
                             return true;
                         }
                     }
@@ -365,8 +390,9 @@ function explorerTreeInit() {
         showMaxSearchElementBlock(limitExceeded);
         SEARCH_PARAM.CURRENT_DISPLAYED = 0;
     }).on('load_node.jstree', function (event, data) {
-
-        if (data.node.original && data.node.original.type === 'table') {
+        if (data.node.original && (data.node.original.type === 'table' ||
+         data.node.original.type === 'dimension' || data.node.original.type === 'measure' ||
+         data.node.original.type === 'filter'))  {
             let nodes = data.node.children.map(id => jstreeDOM.jstree(true).get_node(id));
             let maxLength = Math.max.apply(null, nodes.map(node => node.text.length)) + 3;
             nodes.forEach(function (node) {
@@ -407,7 +433,7 @@ function pasteSelectInElement(element, nodesIds, ctrlKey) {
 
     if (nodesIds.length === 1 && !ctrlKey) {
         let node = jstreeDOM.jstree(true).get_node(nodesIds[0]);
-        if (node.type === "column") {
+        if (node.type === "column" || node.type === "attribute") {
             textToPasteInEditor = node.text.split(' ')[0];
         } else {
             textToPasteInEditor = getNameWithParent(nodesIds[0]);
@@ -430,6 +456,10 @@ function pasteSelectInElement(element, nodesIds, ctrlKey) {
 function generateAndPasteSQLSelect(aceEditor, nodesIds) {
     let tablesIds = new Set();
     let columnsIds = new Set();
+    let dimensionsIds = new Set();
+    let measuresIds = new Set();
+    let filtersIds = new Set();
+    let attributesIds = new Set();
     nodesIds.forEach(function (id) {
         let node = jstreeDOM.jstree(true).get_node(id);
 
@@ -448,6 +478,7 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
         }
     });
     tablesIds = Array.from(tablesIds);
+    dimensionsIds = Array.from(dimensionsIds);
     let needToLoadChildren = false;
 
     tablesIds.forEach(function loadChildren(id) {
@@ -467,8 +498,31 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
         }
     });
 
+    dimensionsIds.forEach(function loadChildren(id) {
+        if (!jstreeDOM.jstree(true).is_loaded(id)) {
+            needToLoadChildren = true;
+            jstreeDOM.jstree(true).load_node(id, function callback(node) {
+                node.children.forEach(childId => attributesIds.add(childId));
+                let allLoaded = true;
+                for (let i = 0; i < dimensionsIds.length && allLoaded; i++) {
+                    allLoaded = jstreeDOM.jstree(true).is_loaded(dimensionsIds[i]);
+                }
+                if (!allLoaded) {
+                    return;
+                }
+                pasteSAPSelect();
+            });
+        }
+    });
+
     if (!needToLoadChildren) {
         pasteSelect();
+    }
+
+    function pasteSAPSelect() {
+        let select = 'SELECT ' + stringListOfNodes(attributesIds) + '\n';
+        select += 'FROM ' + stringListOfNodes(dimensionsIds);
+        aceEditor.session.insert(aceEditor.getCursorPosition(), select);
     }
 
     function pasteSelect() {
@@ -483,7 +537,7 @@ function stringListOfNodes(nodesIds, columnsWithoutTable) {
     nodesIds.forEach(function (id) {
         if (columnsWithoutTable) {
             let node = jstreeDOM.jstree(true).get_node(id);
-            if (node.type === "column") {
+            if (node.type === "column" || node.type === "attribute") {
                 list.push(node.text.split(' ')[0]);
                 return;
             }
@@ -512,8 +566,27 @@ function getNameWithParent(nodeId) {
         case 'column':
             result = nodeParent.text + '.' + node.text.split(' ')[0];
             break;
-    }
 
+        case 'universe':
+            result = node.text;
+            break;
+
+        case 'dimension':
+            result = nodeParent.text + '.' + node.text;
+            break;
+
+        case 'measure':
+            result = nodeParent.text + '.' + node.text;
+            break;
+
+        case 'filter':
+            result = nodeParent.text + '.' + node.text;
+            break;
+
+        case 'attribute':
+            result = nodeParent.text + '.' + node.text.split(' ')[0];
+            break;
+    }
     return result;
 }
 
@@ -540,6 +613,7 @@ function addCommentBlock(id) {
         node.children.forEach(id => addCommentBlock(id));
     }
 }
+
 
 function createObserver(explorer) {
     const navBar = document.querySelector('headroom[class^="navbar"]');
@@ -576,7 +650,7 @@ function createExplorer() {
         <div id="jstree"></div>
         <div id="jstreeMaxElementDiv"><h4>Too many elements to display</h4></div>
     </div>
-    
+
     <div id="dbExplorerResizer" onmousedown="dbExplorerMouseDown(event)"></div>
 </div>
 `)
@@ -702,6 +776,14 @@ function injectCSS() {
 
 .my-glyphicon-color-comment {
     color: rgba(0, 0, 0, 0.34) !important;
+}
+
+.my-glyphicon-color-stats {
+    color: #d370e2 !important;
+}
+
+.my-glyphicon-color-filter {
+    color: #d370e2 !important;
 }
 
 .column-type-span {
