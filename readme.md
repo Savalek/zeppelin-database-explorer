@@ -10,3 +10,29 @@ More info about `zeppelin spell`:  [writing_spell](https://zeppelin.apache.org/d
 <p align="center">
   <img src="https://github.com/Savalek/zeppelin-database-explorer/blob/master/img/spell_settings.png">
 </p>
+
+## Problem solving
+If database explorer button not displayed in zeppelin actionBar try change artifact path to project folder from relative on full in `zeppelin-database-explorer.json`
+```json
+{
+  "type": "SPELL",
+  "name": "zeppelin-database-explorer",
+  "version": "0.2.0",
+  "description": "Display a database structure",
+  "artifact": "/home/savalek/IdeaProjects/zeppelin/zeppelin-examples/zeppelin-database-explorer",
+  "license": "ICS",
+  "icon": "<i class='fa fa-folder-open'></i>",
+  "config": {
+    "metaserver_port": {
+      "type": "number",
+      "description": "Port for connection to metadata server",
+      "defaultValue": 8090
+    },
+    "metaserver_url": {
+      "type": "string",
+      "description": "URL for connection to metadata server",
+      "defaultValue": "localhost"
+    }
+  }
+}
+```
