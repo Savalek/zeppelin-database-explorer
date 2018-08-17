@@ -264,16 +264,34 @@ function explorerTreeInit() {
             'attribute': {
                 'icon': 'glyphicon glyphicon-tag my-glyphicon-color-tag',
                 'a_attr': { 'style': 'font-family: monospace' }
+            },
+            'folder': {
+                'icon': 'glyphicon glyphicon-folder-close my-glyphicon-color-folder',
             }
         },
         'sort': function (nodeId1, nodeId2) {
             let jsTree = jstreeDOM.jstree(true);
             let node1 = jsTree.get_node(nodeId1).original;
             let node2 = jsTree.get_node(nodeId2).original;
-            if (node1.type === 'schema' && node2.type === 'schema') {
-                return new Intl.Collator().compare(node1.text, node2.text);
+            if (node1.type === 'dimension' && node2.type !== 'dimension' && node2.type !== 'universe') {
+                return new Intl.Collator().compare("a", "b");
             }
-            if (node1.type === 'universe' && node2.type === 'universe') {
+            if (node2.type === 'dimension' && node1.type !== 'dimension' && node2.type !== 'universe') {
+                return new Intl.Collator().compare("b", "a");
+            }
+            if (node1.type === 'filter' && node2.type !== 'filter' && node2.type !== 'attribute') {
+                return new Intl.Collator().compare("b", "a");
+            }
+            if (node2.type === 'filter' && node1.type !== 'filter' && node2.type !== 'attribute') {
+                return new Intl.Collator().compare("a", "b");
+            }
+            if (node1.type === 'attribute' && node2.type !== 'attribute') {
+                return new Intl.Collator().compare("b", "a");
+            }
+            if (node2.type === 'attribute' && node1.type !== 'attribute') {
+                return new Intl.Collator().compare("a", "b");
+            }
+            if (node1.type === node2.type) {
                 return new Intl.Collator().compare(node1.text, node2.text);
             }
         },
@@ -304,7 +322,7 @@ function explorerTreeInit() {
                     if (node.type === "table") {
                         req['schemaId'] = node.parent;
                     }
-                    if (node.type === "dimension" || node.type === "measure" || node.type === "filter") {
+                    if (node.type === "dimension" || node.type === "measure" || node.type === "filter" || node.type === "folder") {
                         req['universeId'] = node.parent;
                     }
                     return req;
@@ -342,7 +360,7 @@ function explorerTreeInit() {
                             if (elem.type === 'table') {
                                 request += "&schemaId=" + elem.parent;
                             }
-                            if (elem.type === 'dimension' || elem.type === 'measure' || elem.type === 'filter') {
+                            if (elem.type === 'dimension' || elem.type === 'measure' || elem.type === 'filter' || elem.type === 'folder') {
                                 request += "&universeId=" + elem.parent;
                             }
                             databaseServerRequest(SERVER_URL + request, function () {
@@ -390,9 +408,7 @@ function explorerTreeInit() {
         showMaxSearchElementBlock(limitExceeded);
         SEARCH_PARAM.CURRENT_DISPLAYED = 0;
     }).on('load_node.jstree', function (event, data) {
-        if (data.node.original && (data.node.original.type === 'table' ||
-         data.node.original.type === 'dimension' || data.node.original.type === 'measure' ||
-         data.node.original.type === 'filter'))  {
+        if (data.node.original && data.node.original.type === 'table')  {
             let nodes = data.node.children.map(id => jstreeDOM.jstree(true).get_node(id));
             let maxLength = Math.max.apply(null, nodes.map(node => node.text.length)) + 3;
             nodes.forEach(function (node) {
@@ -433,7 +449,7 @@ function pasteSelectInElement(element, nodesIds, ctrlKey) {
 
     if (nodesIds.length === 1 && !ctrlKey) {
         let node = jstreeDOM.jstree(true).get_node(nodesIds[0]);
-        if (node.type === "column" || node.type === "attribute") {
+        if (node.type === "column") {
             textToPasteInEditor = node.text.split(' ')[0];
         } else {
             textToPasteInEditor = getNameWithParent(nodesIds[0]);
@@ -456,10 +472,6 @@ function pasteSelectInElement(element, nodesIds, ctrlKey) {
 function generateAndPasteSQLSelect(aceEditor, nodesIds) {
     let tablesIds = new Set();
     let columnsIds = new Set();
-    let dimensionsIds = new Set();
-    let measuresIds = new Set();
-    let filtersIds = new Set();
-    let attributesIds = new Set();
     nodesIds.forEach(function (id) {
         let node = jstreeDOM.jstree(true).get_node(id);
 
@@ -478,7 +490,6 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
         }
     });
     tablesIds = Array.from(tablesIds);
-    dimensionsIds = Array.from(dimensionsIds);
     let needToLoadChildren = false;
 
     tablesIds.forEach(function loadChildren(id) {
@@ -498,31 +509,8 @@ function generateAndPasteSQLSelect(aceEditor, nodesIds) {
         }
     });
 
-    dimensionsIds.forEach(function loadChildren(id) {
-        if (!jstreeDOM.jstree(true).is_loaded(id)) {
-            needToLoadChildren = true;
-            jstreeDOM.jstree(true).load_node(id, function callback(node) {
-                node.children.forEach(childId => attributesIds.add(childId));
-                let allLoaded = true;
-                for (let i = 0; i < dimensionsIds.length && allLoaded; i++) {
-                    allLoaded = jstreeDOM.jstree(true).is_loaded(dimensionsIds[i]);
-                }
-                if (!allLoaded) {
-                    return;
-                }
-                pasteSAPSelect();
-            });
-        }
-    });
-
     if (!needToLoadChildren) {
         pasteSelect();
-    }
-
-    function pasteSAPSelect() {
-        let select = 'SELECT ' + stringListOfNodes(attributesIds) + '\n';
-        select += 'FROM ' + stringListOfNodes(dimensionsIds);
-        aceEditor.session.insert(aceEditor.getCursorPosition(), select);
     }
 
     function pasteSelect() {
@@ -537,7 +525,7 @@ function stringListOfNodes(nodesIds, columnsWithoutTable) {
     nodesIds.forEach(function (id) {
         if (columnsWithoutTable) {
             let node = jstreeDOM.jstree(true).get_node(id);
-            if (node.type === "column" || node.type === "attribute") {
+            if (node.type === "column") {
                 list.push(node.text.split(' ')[0]);
                 return;
             }
@@ -568,23 +556,26 @@ function getNameWithParent(nodeId) {
             break;
 
         case 'universe':
-            result = node.text;
+            result = '[' + node.text + ']';
             break;
 
-        case 'dimension':
-            result = nodeParent.text + '.' + node.text;
+        case 'folder':
+            var path = require('path');
+            text = node.text;
+            while (nodeParent.original.type !== 'universe') {
+                text = nodeParent.original.text + path.sep + text;
+                nodeParent = jstreeDOM.jstree(true).get_node(nodeParent.parent)
+            }
+            result = text;
             break;
 
-        case 'measure':
-            result = nodeParent.text + '.' + node.text;
-            break;
-
-        case 'filter':
-            result = nodeParent.text + '.' + node.text;
-            break;
-
-        case 'attribute':
-            result = nodeParent.text + '.' + node.text.split(' ')[0];
+        default:
+            let text = '[' + node.text + ']';
+            while (nodeParent.original.type !== 'universe') {
+                text = '[' + nodeParent.original.text + '].' + text;
+                nodeParent = jstreeDOM.jstree(true).get_node(nodeParent.parent)
+            }
+            result = text;
             break;
     }
     return result;
@@ -783,6 +774,10 @@ function injectCSS() {
 }
 
 .my-glyphicon-color-filter {
+    color: #d370e2 !important;
+}
+
+.my-glyphicon-color-folder {
     color: #d370e2 !important;
 }
 
