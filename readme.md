@@ -14,5 +14,5 @@ More info about `zeppelin spell`:  [writing_spell](https://zeppelin.apache.org/d
 ## New
 Simple SAP structure visualization:
 <p align="center">
-  <img src="https://github.com/Savalek/zeppelin-database-explorer/blob/master/img/sap.png">
+  <img src="https://github.com/egorklimov/zeppelin-database-explorer/blob/master/img/sap.png">
 </p>
