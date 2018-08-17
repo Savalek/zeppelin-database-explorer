@@ -10,3 +10,9 @@ More info about `zeppelin spell`:  [writing_spell](https://zeppelin.apache.org/d
 <p align="center">
   <img src="https://github.com/Savalek/zeppelin-database-explorer/blob/master/img/spell_settings.png">
 </p>
+
+## New
+Simple SAP structure visualization:
+<p align="center">
+  <img src="https://github.com/Savalek/zeppelin-database-explorer/blob/master/img/sap.png">
+</p>
