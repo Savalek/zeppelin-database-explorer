@@ -37,14 +37,14 @@ window.db_explorer = null;
 let jstreeDOM;
 let contentDOM;
 let notebookController = null;
-let SEARCH_PARAM = null;
+let SEARCH_PARAM = new Map();
 
-let databases = [];
+let databases = new Map();
 let currentDatabase = null;
 let SPELL_CONFIG_URL = 'http://' + document.location.href.split('/')[2] + '/api/helium/spell/config/zeppelin-database-explorer';
 // let SPELL_CONFIG_URL = 'http://' + document.location.href.split('/')[2].split(':')[0] + ':8080' + '/api/helium/spell/config/zeppelin-database-explorer';
 
-let SERVER_URL = null;
+let SERVER_URLS = [];
 // let SERVER_URL = 'http://' + document.location.href.split('/')[2].split(':')[0] + ':8090' + '/jstree';
 
 
@@ -54,9 +54,16 @@ export default class DBExplorerSpell extends SpellBase {
         injectCSS();
         databaseServerRequest(SPELL_CONFIG_URL, function (responseText) {
             let body = JSON.parse(responseText).body;
-            let metaserverUrl = body.confPersisted.metaserver_url || body.confSpec.metaserver_url.defaultValue;
-            let metaserverPort = body.confPersisted.metaserver_port || body.confSpec.metaserver_port.defaultValue;
-            SERVER_URL = 'http://' + metaserverUrl + ':' + metaserverPort + '/jstree';
+            if (body.confPersisted.metaserver_url && body.confPersisted.metaserver_port) {
+                let metaserverUrl = body.confPersisted.metaserver_url || body.confSpec.metaserver_url.defaultValue;
+                let metaserverPort = body.confPersisted.metaserver_port || body.confSpec.metaserver_port.defaultValue;
+                SERVER_URLS.push('http://' + metaserverUrl + ':' + metaserverPort + '/jstree');
+            }
+            if (body.confPersisted.sapserver_url  && body.confPersisted.sapserver_port) {
+                let sapserverUrl = body.confPersisted.sapserver_url;
+                let sapserverPort = body.confPersisted.sapserver_port;
+                SERVER_URLS.push('http://' + sapserverUrl + ':' + sapserverPort + '/jstree')
+            }
             explorer_init();
         });
     }
@@ -73,21 +80,50 @@ function explorer_init() {
     createObserver(db_explorer);
     db_explorer = db_explorer[0];
 
-    databaseServerRequest(SERVER_URL + "/databases_list", function (responseText) {
-        let answer = JSON.parse(responseText);
-        answer.forEach(e => databases.push(e));
-        currentDatabase = databases[0];
+    var isDatabaseListsProcessed = null;
+    var isSearchLimitProcessed = null;
+
+    var initHandler = new Promise((resolve, reject) => {
+        SERVER_URLS.forEach(SERVER_URL => {
+            databaseServerRequest(SERVER_URL + "/databases_list", function (responseText) {
+                let answer = JSON.parse(responseText);
+                currentDatabase = null
+                answer.forEach(e => {
+                    databases.set(e, SERVER_URL);
+                    if (!currentDatabase) {
+                        currentDatabase = e;
+                    }
+                    console.log("Processed:", SERVER_URL, "\nAvailable connections:", SERVER_URLS);
+                    if (SERVER_URL === SERVER_URLS[SERVER_URLS.length - 1]) {
+                        isDatabaseListsProcessed = true;
+                    }
+                    if (isSearchLimitProcessed && isDatabaseListsProcessed) {
+                        resolve();
+                    }
+                });
+            });
+            databaseServerRequest(SERVER_URL + "/get_search_limit", function (responseText) {
+                let max_element = parseInt(responseText);
+                SEARCH_PARAM.set(
+                    SERVER_URL,
+                    {
+                        'MAX_DISPLAYED_ELEMENTS': max_element,
+                        'CURRENT_DISPLAYED': 0
+                    }
+                );
+                if (SERVER_URL === SERVER_URLS[SERVER_URLS.length - 1]) {
+                    isSearchLimitProcessed = true;
+                }
+                if (isSearchLimitProcessed && isDatabaseListsProcessed) {
+                    resolve();
+                }
+            })
+        });
+    });
+    initHandler.then(() => {
         explorerTreeInit();
         createOnDestroyListener();
     });
-
-    databaseServerRequest(SERVER_URL + "/get_search_limit", function (responseText) {
-        let max_element = parseInt(responseText);
-        SEARCH_PARAM = {
-            'MAX_DISPLAYED_ELEMENTS': max_element,
-            'CURRENT_DISPLAYED': 0
-        };
-    })
 }
 
 function addShowDBExplorerButton() {
@@ -129,7 +165,6 @@ function createOnDestroyListener() {
             //showDBExplorer();
             this.disconnect();
         }
-
     });
     observer.observe(target, {childList: true});
 }
@@ -188,18 +223,26 @@ window.dbExplorerChangeDatabase = function (name) {
     if (currentDatabase === name) {
         return;
     }
-    /*    let newURL = SERVER_URL + 'database=' + name;
-        jstreeDOM.jstree(true).settings.core.data.url = newURL;
-        jstreeDOM.jstree(true).settings.massload.url = newURL;*/
 
     showMaxSearchElementBlock(false);
 
     currentDatabase = name;
 
-    jstreeDOM.jstree(true).settings.search.ajax.url = SERVER_URL + '/search?database=' + currentDatabase;
-
-    jstreeDOM.jstree(true).close_all();
-    jstreeDOM.jstree(true).refresh();
+    var updateHandler = new Promise((resolve, reject) => {
+        jstreeDOM.jstree(true).settings.core.data.url = databases.get(currentDatabase) + '/get_children';
+        jstreeDOM.jstree(true).settings.massload.url = databases.get(currentDatabase) + '/massload';
+        jstreeDOM.jstree(true).settings.search.ajax.url = databases.get(currentDatabase) + '/search?database=' + currentDatabase;
+        if (jstreeDOM.jstree(true).settings.search.ajax.url === databases.get(currentDatabase) + '/search?database=' + currentDatabase
+           && jstreeDOM.jstree(true).settings.core.data.url === databases.get(currentDatabase) + '/get_children'
+           && jstreeDOM.jstree(true).settings.massload.url === databases.get(currentDatabase) + '/massload'
+           && jstreeDOM.jstree(true).settings.massload.url === databases.get(currentDatabase) + '/massload') {
+            resolve();
+        }
+    });
+    updateHandler.then(() => {
+        jstreeDOM.jstree(true).close_all();
+        jstreeDOM.jstree(true).refresh();
+    });
 };
 
 let dbExplorerResizerMouseDown = false;
@@ -229,13 +272,13 @@ function explorerTreeInit() {
     jstreeDOM = local$('#jstree');
 
     let databaseSelect = document.getElementById("databaseSelect");
-    databases.forEach(function (databaseName) {
+    databases.forEach(function (serverURL, databaseName, mapObj) {
         let option = document.createElement("option");
         option.text = databaseName;
         databaseSelect.add(option);
+        databaseSelect[databaseSelect.length - 1].selected = true;
     });
 
-    let initServerURL = SERVER_URL + 'database=' + currentDatabase;
     jstreeDOM.jstree({
         'plugins': ['json_data', 'types', 'dnd', 'search', 'massload', 'contextmenu', 'sort'],
         'types': {
@@ -296,7 +339,7 @@ function explorerTreeInit() {
             }
         },
         'massload': {
-            'url': SERVER_URL + '/massload',
+            'url': databases.get(currentDatabase) + '/massload',
             'data': function (nodes) {
                 return {
                     'ids': nodes.join(','),
@@ -312,7 +355,7 @@ function explorerTreeInit() {
                 return false;
             },
             'data': {
-                'url': SERVER_URL + '/get_children',
+                'url': databases.get(currentDatabase) + '/get_children',
                 'data': function (node) {
                     let req = {
                         'id': node.id,
@@ -332,12 +375,18 @@ function explorerTreeInit() {
         'search': {
             'show_only_matches': true,
             'ajax': {
-                'url': SERVER_URL + '/search?database=' + currentDatabase
+                'url': databases.get(currentDatabase) + '/search?database=' + currentDatabase
             },
             'search_callback': function (str, node) {
-                if (SEARCH_PARAM.CURRENT_DISPLAYED <= SEARCH_PARAM.MAX_DISPLAYED_ELEMENTS) {
-                    if (node.text.split(' ')[0].indexOf(str) !== -1) {
-                        SEARCH_PARAM.CURRENT_DISPLAYED++;
+                if (SEARCH_PARAM.get(databases.get(currentDatabase)).CURRENT_DISPLAYED <=
+                SEARCH_PARAM.get(databases.get(currentDatabase)).MAX_DISPLAYED_ELEMENTS) {
+                    let searchString = node.text;
+                    if (node.text.indexOf('<span class') !== -1) {
+                        // sql case
+                        searchString = searchString.split(' ')[0];
+                    }
+                    if (searchString.indexOf(str) !== -1) {
+                        SEARCH_PARAM.get(databases.get(currentDatabase)).CURRENT_DISPLAYED++;
                         return true;
                     }
                 }
@@ -363,7 +412,7 @@ function explorerTreeInit() {
                             if (elem.type === 'dimension' || elem.type === 'measure' || elem.type === 'filter' || elem.type === 'folder') {
                                 request += "&universeId=" + elem.parent;
                             }
-                            databaseServerRequest(SERVER_URL + request, function () {
+                            databaseServerRequest(databases.get(currentDatabase) + request, function () {
                                 jstreeDOM.jstree(true).refresh_node(elem);
                             });
                         });
@@ -383,7 +432,7 @@ function explorerTreeInit() {
                         let request = "/refresh_element?database=" + currentDatabase;
                         request += "&id=" + elem.id;
                         request += "&recursively=" + true;
-                        databaseServerRequest(SERVER_URL + request, function () {
+                        databaseServerRequest(databases.get(currentDatabase) + request, function () {
                             jstreeDOM.jstree(true).refresh_node(elem);
                         });
                     },
@@ -404,9 +453,10 @@ function explorerTreeInit() {
     }).on('redraw.jstree', function (event, data) {
         data.nodes.forEach(addCommentBlock);
     }).on('search.jstree', function (event, data) {
-        let limitExceeded = SEARCH_PARAM.CURRENT_DISPLAYED >= SEARCH_PARAM.MAX_DISPLAYED_ELEMENTS;
+        let limitExceeded = SEARCH_PARAM.get(databases.get(currentDatabase)).CURRENT_DISPLAYED >=
+        SEARCH_PARAM.get(databases.get(currentDatabase)).MAX_DISPLAYED_ELEMENTS;
         showMaxSearchElementBlock(limitExceeded);
-        SEARCH_PARAM.CURRENT_DISPLAYED = 0;
+        SEARCH_PARAM.get(databases.get(currentDatabase)).CURRENT_DISPLAYED = 0;
     }).on('load_node.jstree', function (event, data) {
         if (data.node.original && data.node.original.type === 'table')  {
             let nodes = data.node.children.map(id => jstreeDOM.jstree(true).get_node(id));
