@@ -23,7 +23,7 @@ If database explorer button not displayed in zeppelin actionBar try change artif
   "name": "zeppelin-database-explorer",
   "version": "0.2.0",
   "description": "Display a database structure",
-  "artifact": "./zeppelin-examples/zeppelin-database-explorer",
+  "artifact": "/home/savalek/IdeaProjects/zeppelin/zeppelin-examples/zeppelin-database-explorer",
   "license": "ICS",
   "icon": "<i class='fa fa-folder-open'></i>",
   "config": {
