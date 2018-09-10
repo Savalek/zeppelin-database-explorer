@@ -23,20 +23,29 @@ If database explorer button not displayed in zeppelin actionBar try change artif
   "name": "zeppelin-database-explorer",
   "version": "0.2.0",
   "description": "Display a database structure",
-  "artifact": "/home/savalek/IdeaProjects/zeppelin/zeppelin-examples/zeppelin-database-explorer",
+  "artifact": "./zeppelin-examples/zeppelin-database-explorer",
   "license": "ICS",
   "icon": "<i class='fa fa-folder-open'></i>",
   "config": {
     "metaserver_port": {
       "type": "number",
-      "description": "Port for connection to metadata server",
-      "defaultValue": 8090
+      "description": "Port for connection to metadata server"
     },
     "metaserver_url": {
       "type": "string",
-      "description": "URL for connection to metadata server",
-      "defaultValue": "localhost"
+      "description": "URL for connection to metadata server"
+    },
+    "sapserver_port": {
+      "type": "number",
+      "description": "Port for connection to SAP metadata server"
+    },
+    "sapserver_url": {
+      "type": "string",
+      "description": "URL for connection to SAP metadata server"
     }
+  },
+  "spell": {
+    "magic": "Configure Metadata Server and/or SAP Language Server and click on button on Action Bar in note"
   }
 }
 ```
