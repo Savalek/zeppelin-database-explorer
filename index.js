@@ -412,9 +412,7 @@ function explorerTreeInit() {
                             if (elem.type === 'dimension' || elem.type === 'measure' || elem.type === 'filter' || elem.type === 'folder') {
                                 request += "&universeId=" + elem.parent;
                             }
-                            databaseServerRequest(databases.get(currentDatabase) + request, function () {
-                                jstreeDOM.jstree(true).refresh_node(elem);
-                            });
+                            databaseServerRequest(databases.get(currentDatabase) + request, setTimeout(() => jstreeDOM.jstree(true).refresh_node(elem), 1000));
                         });
 
                     },
@@ -432,9 +430,7 @@ function explorerTreeInit() {
                         let request = "/refresh_element?database=" + currentDatabase;
                         request += "&id=" + elem.id;
                         request += "&recursively=" + true;
-                        databaseServerRequest(databases.get(currentDatabase) + request, function () {
-                            jstreeDOM.jstree(true).refresh_node(elem);
-                        });
+                        databaseServerRequest(databases.get(currentDatabase) + request, setTimeout(() => jstreeDOM.jstree(true).refresh_node(elem), 1000));
                     },
                     '_disabled': function (obj) {
                         if (jstreeDOM.jstree("get_selected").length !== 1) {
