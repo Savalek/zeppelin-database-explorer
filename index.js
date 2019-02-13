@@ -39,13 +39,10 @@ let contentDOM;
 let notebookController = null;
 let SEARCH_PARAM = null;
 
-let databases = [];
-let currentDatabase = null;
+let sources = [];
+let currentSource = null;
 let SPELL_CONFIG_URL = 'http://' + document.location.href.split('/')[2] + '/api/helium/spell/config/zeppelin-database-explorer';
-// let SPELL_CONFIG_URL = 'http://' + document.location.href.split('/')[2].split(':')[0] + ':8080' + '/api/helium/spell/config/zeppelin-database-explorer';
-
 let SERVER_URL = null;
-// let SERVER_URL = 'http://' + document.location.href.split('/')[2].split(':')[0] + ':8090' + '/jstree';
 
 
 export default class DBExplorerSpell extends SpellBase {
@@ -73,10 +70,10 @@ function explorer_init() {
     createObserver(db_explorer);
     db_explorer = db_explorer[0];
 
-    databaseServerRequest(SERVER_URL + "/databases_list", function (responseText) {
+    databaseServerRequest(SERVER_URL + "/sources_list", function (responseText) {
         let answer = JSON.parse(responseText);
-        answer.forEach(e => databases.push(e));
-        currentDatabase = databases[0];
+        answer.forEach(e => sources.push(e));
+        currentSource = sources[0];
         explorerTreeInit();
         createOnDestroyListener();
     });
@@ -185,7 +182,7 @@ window.dbExplorerChangeHeight = function (px) {
 };
 
 window.dbExplorerChangeDatabase = function (name) {
-    if (currentDatabase === name) {
+    if (currentSource.name === name) {
         return;
     }
     /*    let newURL = SERVER_URL + 'database=' + name;
@@ -194,9 +191,15 @@ window.dbExplorerChangeDatabase = function (name) {
 
     showMaxSearchElementBlock(false);
 
-    currentDatabase = name;
+    currentSource = sources;
 
-    jstreeDOM.jstree(true).settings.search.ajax.url = SERVER_URL + '/search?database=' + currentDatabase;
+    sources.forEach((s) => {
+       if (s.name === name) {
+           currentSource = s;
+       }
+    });
+
+    jstreeDOM.jstree(true).settings.search.ajax.url = SERVER_URL + '/search?source=' + currentSource.id;
 
     jstreeDOM.jstree(true).close_all();
     jstreeDOM.jstree(true).refresh();
@@ -228,14 +231,14 @@ function explorerTreeInit() {
     let local$ = require('jquery');
     jstreeDOM = local$('#jstree');
 
-    let databaseSelect = document.getElementById("databaseSelect");
-    databases.forEach(function (databaseName) {
+    let sourceSelect = document.getElementById("databaseSelect");
+    sources.forEach(function (source) {
         let option = document.createElement("option");
-        option.text = databaseName;
-        databaseSelect.add(option);
+        option.text = source.name;
+        sourceSelect.add(option);
     });
 
-    let initServerURL = SERVER_URL + 'database=' + currentDatabase;
+    let initServerURL = SERVER_URL + 'database=' + currentSource;
     jstreeDOM.jstree({
         'plugins': ['json_data', 'types', 'dnd', 'search', 'massload', 'contextmenu', 'sort'],
         'types': {
@@ -263,7 +266,7 @@ function explorerTreeInit() {
             'data': function (nodes) {
                 return {
                     'ids': nodes.join(','),
-                    'database': currentDatabase
+                    'database': currentSource
                 };
             }
         },
@@ -277,22 +280,17 @@ function explorerTreeInit() {
             'data': {
                 'url': SERVER_URL + '/get_children',
                 'data': function (node) {
-                    let req = {
+                    return {
                         'id': node.id,
-                        'type': node.type,
-                        'database': currentDatabase
+                        'source_id': currentSource.id
                     };
-                    if (node.type === "table") {
-                        req['schemaId'] = node.parent;
-                    }
-                    return req;
                 }
             }
         },
         'search': {
             'show_only_matches': true,
             'ajax': {
-                'url': SERVER_URL + '/search?database=' + currentDatabase
+                'url': SERVER_URL + '/search?source=' + currentSource.id
             },
             'search_callback': function (str, node) {
                 if (SEARCH_PARAM.CURRENT_DISPLAYED <= SEARCH_PARAM.MAX_DISPLAYED_ELEMENTS) {
@@ -302,58 +300,6 @@ function explorerTreeInit() {
                     }
                 }
                 return false;
-            }
-        },
-        'contextmenu': {
-            'items': {
-                'reload': {
-                    'label': () => jstreeDOM.jstree("get_selected").length === 1 ? 'Reload element' : 'Reload selected elements',
-                    'action': function (obj) {
-                        let selectedIds = jstreeDOM.jstree("get_selected");
-                        selectedIds.forEach(function (id) {
-                            let elem = jstreeDOM.jstree(true).get_node(id);
-                            if (elem.type === 'column') {
-                                return;
-                            }
-                            let request = "/refresh_element?database=" + currentDatabase;
-                            request += "&id=" + elem.id;
-                            if (elem.type === 'table') {
-                                request += "&schemaId=" + elem.parent;
-                            }
-                            databaseServerRequest(SERVER_URL + request, function () {
-                                jstreeDOM.jstree(true).refresh_node(elem);
-                            });
-                        });
-
-                    },
-                    '_disabled': function (obj) {
-                        let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
-                        if (elem.type === 'column') {
-                            return true;
-                        }
-                    }
-                },
-                'reload_rec': {
-                    'label': 'Reload recursively',
-                    'action': function (obj) {
-                        let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
-                        let request = "/refresh_element?database=" + currentDatabase;
-                        request += "&id=" + elem.id;
-                        request += "&recursively=" + true;
-                        databaseServerRequest(SERVER_URL + request, function () {
-                            jstreeDOM.jstree(true).refresh_node(elem);
-                        });
-                    },
-                    '_disabled': function (obj) {
-                        if (jstreeDOM.jstree("get_selected").length !== 1) {
-                            return true;
-                        }
-                        let elem = jstreeDOM.jstree(true).get_node(obj.reference[0]);
-                        if (elem.type !== 'schema') {
-                            return true;
-                        }
-                    }
-                }
             }
         }
     }).on('open_node.jstree', function (event, data) {
